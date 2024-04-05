@@ -5,14 +5,18 @@ import h5py
 import numpy as np
 import SimpleITK as sitk
 
+
+# 기존 이미지를 slice로 변경
 slice_num = 0
 mask_path = sorted(glob.glob("/home/xdluo/data/ACDC/image/*.nii.gz"))
 for case in mask_path:
+    # 이미지 path 불러오기
     img_itk = sitk.ReadImage(case)
     origin = img_itk.GetOrigin()
     spacing = img_itk.GetSpacing()
     direction = img_itk.GetDirection()
     image = sitk.GetArrayFromImage(img_itk)
+    # mask path 불러오기
     msk_path = case.replace("image", "label").replace(".nii.gz", "_gt.nii.gz")
     if os.path.exists(msk_path):
         print(msk_path)
@@ -35,3 +39,6 @@ for case in mask_path:
             slice_num += 1
 print("Converted all ACDC volumes to 2D slices")
 print("Total {} slices".format(slice_num))
+
+# 환자 한명당 frame01, 02가 있고 각 frame 당 10 slices 씩 있음.
+# h5는 디렉토리 형태로 각각의 항목 안에 image, 그리고 label이 있다. 

@@ -115,7 +115,7 @@ class TopKSampler(Sampler):
 
         return torch.stack((indices_positives, indices_negatives)).permute(1, 0, 2, 3)
 
-
+# 이것이 바로 entropy sampler
 class EntropySampler(Sampler):
     def preprocess(self, values: torch.Tensor) -> torch.Tensor:
         def clamp(x):

@@ -45,12 +45,14 @@ class BaseDataSets(Dataset):
             h5f = h5py.File(self._base_dir + "/data/{}.h5".format(case), 'r')
         image = h5f['image'][:]
         label = h5f['label'][:]
-        sample = {'image': image, 'label': label}
+        sample = {'image': image, 'label': label} # 딕셔너리 형태로
         if self.split == "train":
             sample = self.transform(sample)
         sample["idx"] = idx
-        return sample
+        return sample # sample 딕셔너리에 이미지, 라벨, 인덱스 들어있음
 
+
+# augmentation
 
 def random_rot_flip(image, label):
     k = np.random.randint(0, 4)

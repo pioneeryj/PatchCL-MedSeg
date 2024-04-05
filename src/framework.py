@@ -9,6 +9,7 @@ import torch.nn as nn
 import src.util.events
 from src.sampling import Sampler
 from src.similarity import SimilarityMeasure
+from typing import Dict
 
 # Indices
 POSITIVE = 0
@@ -74,7 +75,7 @@ class Model(pl.LightningModule):
         featuriser_network: nn.Module,
         inter_channel_loss_scaling_factor: float = 1,
         learning_rate: float = 0.0002,
-        info_to_log: dict[str, str] = {},  # logged as hyperparameters by self.save_hyperparameters call
+        info_to_log: Dict[str, str] = {},  # logged as hyperparameters by self.save_hyperparameters call
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -98,6 +99,7 @@ class Model(pl.LightningModule):
         images = batch
         attention_maps = self.confidence_network(images)
         attended_images = torch.stack([images[:, i, None] * attention_maps for i in range(images.shape[1])], dim=2)
+        # intensity * confidence
 
         n_images = images.shape[0]
         n_classes = attention_maps.shape[1]
@@ -224,7 +226,6 @@ class Model(pl.LightningModule):
                 masks=masks
             )
         )
-
         return dice_scores
 
     def validation_epoch_end(self, validation_step_outputs):
