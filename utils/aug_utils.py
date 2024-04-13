@@ -34,15 +34,15 @@ def augment(imgs):
                               ),
                           
                               #color jitter the image == change brightness, contrast, hue and saturation                     
-                              iaa.AddToHueAndSaturation((-50, 50), per_channel=0.5),
-                              iaa.LinearContrast((0.5, 1.5), per_channel=0.5),
+                              #iaa.AddToHueAndSaturation((-50, 50), per_channel=0.5), # 일단 뺏음
+                              #iaa.LinearContrast((0.5, 1.5), per_channel=0.5), # 일단 뺏음
                               iaa.Multiply((0.5, 1.5), per_channel=0.5),
 
                               # Convert each image to grayscale and then overlay the
                               # result with the original with random alpha. I.e. remove
                               # colors with varying strengths.
             ]),
-         sometimes(iaa.Grayscale(alpha=(0.0, 1.0)))
+         #sometimes(iaa.Grayscale(alpha=(0.0, 1.0)))
         ]
     )
 

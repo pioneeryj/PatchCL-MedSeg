@@ -10,10 +10,12 @@ from scipy.ndimage.interpolation import zoom
 import itertools
 from scipy import ndimage
 from torch.utils.data.sampler import Sampler
+from torchvision import transforms
 
 
-class BaseDataSets(Dataset):
-    def __init__(self, base_dir=None, split='train', num=None, transform=None):
+class BaseDatasets(Dataset):
+    def __init__(self, base_dir="C:/Users/herbw/OneDrive/#IIPL/2024_IEIE/PatchCL-MedSeg/ACDC", split='train', num=None, 
+                 transform=transforms.Compose([transforms.Resize((224,224)), transforms.ToTensor()])):
         self._base_dir = base_dir
         self.sample_list = []
         self.split = split
@@ -37,22 +39,31 @@ class BaseDataSets(Dataset):
         return len(self.sample_list)
 
     def __getitem__(self, idx):
+        global SHOW_H5
+        # img, mask 한쌍씩 나오도록
         case = self.sample_list[idx]
         if self.split == "train":
             h5f = h5py.File(self._base_dir +
                             "/data/slices/{}.h5".format(case), 'r')
         else:
             h5f = h5py.File(self._base_dir + "/data/{}.h5".format(case), 'r')
+        
         image = h5f['image'][:]
-        label = h5f['label'][:]
-        sample = {'image': image, 'label': label} # 딕셔너리 형태로
+        mask = h5f['label'][:]
+        
+        sample = {'image': image, 'mask': mask} # 딕셔너리 형태로
         if self.split == "train":
-            sample = self.transform(sample)
-        sample["idx"] = idx
-        return sample # sample 딕셔너리에 이미지, 라벨, 인덱스 들어있음
+            #sample = self.transform(sample)
+            sample["idx"] = idx
+        return sample # sample 딕셔너리에 각 key로 img, mask, idx 들어있음
 
+dataset=BaseDatasets(base_dir="C:/Users/herbw/OneDrive/#IIPL/2024_IEIE/PatchCL-MedSeg/ACDC",split="train")
+length=dataset.__len__()
+print(f"Sample list length: {length}")
 
-# augmentation
+data_=dataset.__getitem__(100)['mask'].shape
+# print(f"dataset.__getitem__(100)['mask'].shape: \n {data_}")
+
 
 def random_rot_flip(image, label):
     k = np.random.randint(0, 4)
@@ -94,6 +105,9 @@ class RandomGenerator(object):
         label = torch.from_numpy(label.astype(np.uint8))
         sample = {'image': image, 'label': label}
         return sample
+
+random_transform = RandomGenerator(output_size=512)
+
 
 
 class TwoStreamBatchSampler(Sampler):
@@ -143,3 +157,47 @@ def grouper(iterable, n):
     # grouper('ABCDEFG', 3) --> ABC DEF"
     args = [iter(iterable)] * n
     return zip(*args)
+
+
+# train list 에 들어있는 sample : 1312개
+
+# 내가 쓴 코드
+# 10% 20% 로 나눠야함
+
+
+def LabData():
+    db_full = BaseDatasets(base_dir="C:/Users/herbw/OneDrive/#IIPL/2024_IEIE/PatchCL-MedSeg/ACDC", split="train", transform=None)
+    
+
+    # 전체 데이터의 10%를 라벨 데이터로 설정
+    total_slices = len(db_full)
+    labeled_slice = int(0.1 * total_slices)  # 10%
+
+    # 라벨 데이터의 인덱스
+    labeled_idxs = list(range(0, labeled_slice))
+    print("Labeled {} samples".format(len(labeled_idxs)))
+
+    # 라벨 데이터만 포함하는 서브셋 생성
+    db_labeled = torch.utils.data.Subset(db_full, labeled_idxs)
+
+    return db_labeled
+
+def UnlabData():
+    db_full = BaseDatasets(base_dir="C:/Users/herbw/OneDrive/#IIPL/2024_IEIE/PatchCL-MedSeg/ACDC", split="train", transform=None)
+
+    # 전체 데이터의 90%를 언라벨 데이터로 설정
+    total_slices = len(db_full)
+    labeled_slice = int(0.1 * total_slices)  # 10%는 라벨 데이터
+    unlabeled_slice = total_slices - labeled_slice
+
+    # 언라벨 데이터의 인덱스
+    unlabeled_idxs = list(range(labeled_slice, total_slices))
+    print("Unlabeled {} samples".format(len(unlabeled_idxs)))
+
+    # 언라벨 데이터만 포함하는 서브셋 생성
+    db_unlabeled = torch.utils.data.Subset(db_full, unlabeled_idxs)
+
+    # 확인
+    # print(f"np.unique(db_unlabeled[100]){np.unique(db_unlabeled[100])}")
+
+    return db_unlabeled

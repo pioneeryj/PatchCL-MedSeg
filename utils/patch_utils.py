@@ -1,9 +1,13 @@
 import math
 import cv2
+import torch
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 import numpy as np
+import sys 
+sys.path.append("C:/Users/herbw/OneDrive/#IIPL/2024_IEIE/PatchCL-MedSeg/utils")
 from nms_utils import non_max_suppression_slow, non_max_suppression_fast
+import matplotlib.pyplot as plt
 
 def patcher(imgs,mask,x,y,w,h,patch_size,image_size):
 
@@ -83,9 +87,30 @@ def patcher(imgs,mask,x,y,w,h,patch_size,image_size):
                     coordinate_list.append(np.array([x_corner, y_corner,x_corner+patch_size, y_corner+patch_size]))
         return out_list,coordinate_list
 
+def convert_to_one_hot(masks, num_classes=4):
+    """
+    마스크 텐서를 원-핫 인코딩 형식으로 변환합니다.
+    """
+    batch_size, height, width = masks.shape
+    one_hot = np.zeros((batch_size, num_classes, height, width), dtype=np.uint8)
+    for class_id in range(num_classes):
+        class_mask = (masks == class_id)
+        one_hot[:, class_id, :, :] = class_mask # 0 또는 1
 
+    return one_hot
 
-def _get_patches(imgs,masks,classes=21,background=True,img_size=512,patch_size=256):
+def pad_patch(patch, patch_size):
+    """
+    Ensure the patch is exactly patch_size x patch_size.
+    """
+    current_height, current_width = patch.shape[-2:]
+    pad_height = max(0, patch_size - current_height)
+    pad_width = max(0, patch_size - current_width)
+    patch = np.pad(patch, ((0,0), (pad_height//2, pad_height - pad_height//2), (pad_width//2, pad_width - pad_width//2)), mode='constant', constant_values=0)
+    return patch
+
+# 패치 사이즈 지정
+def _get_patches(imgs,masks,classes=4,background=True,img_size=384,patch_size=64):
 
     """
     INPUTS:
@@ -102,30 +127,46 @@ def _get_patches(imgs,masks,classes=21,background=True,img_size=512,patch_size=2
 
     #LOOK AT THIS CONVERSTION!!
     masks=np.array(masks,dtype='uint8')
+    one_hot_masks = convert_to_one_hot(masks, num_classes=4)
     imgs=np.array(imgs)
+    print(f'비포 imgs.shape{imgs.shape}')
+    imgs = np.repeat(imgs[..., np.newaxis], 3, axis=-1)
+    imgs = np.transpose(imgs, (0, 3, 1, 2))
+    #imgs=np.expand_dims(imgs, axis=1)# 채널 차원 추가해줬음.
+    print(f'애프터 imgs.shape{imgs.shape}')
+
+    #print(f"masks shape:{masks.shape}") #(8, 384, 276)
 
     patches=[]
     start_index=0
+
+
     #Assuming background index to be 0
     if background is True:
         start_index+=1
-        bkgrnds=masks[:,0,:,:] #getting the background masks
+        # bkgrnds=masks[:,0,:,:] #getting the background masks
+        bkgrnds=one_hot_masks[:,0,:,:] #getting the background masks
         bkgrnds_list=[]
         num_bkgrnd_patches=int(math.ceil(img_size/patch_size))
         for i in range(num_bkgrnd_patches):
-            for j in range (num_bkgrnd_patches):  #4 cases depending on patch_size and image_size
-                if i != num_bkgrnd_patches-1 and j != num_bkgrnd_patches-1:
-                    bkgrnds_list=bkgrnds_list+[imgs[k,:,i:i+patch_size,j:j+patch_size]*bkgrnds[k,i:i+patch_size,j:j+patch_size] for k in range(bkgrnds.shape[0])]
-                elif i == num_bkgrnd_patches-1 and j != num_bkgrnd_patches-1:
-                    bkgrnds_list=bkgrnds_list+[imgs[k,:,img_size-patch_size:img_size,j:j+patch_size]*bkgrnds[k,img_size-patch_size:img_size,j:j+patch_size]for k in range(bkgrnds.shape[0])]
-                elif i != num_bkgrnd_patches-1 and j == num_bkgrnd_patches-1:
-                    bkgrnds_list=bkgrnds_list+[imgs[k,:,i:i+patch_size,img_size-patch_size:img_size]*bkgrnds[k,i:i+patch_size,img_size-patch_size:img_size] for k in range(bkgrnds.shape[0])]
-                else:
-                    bkgrnds_list=bkgrnds_list+[imgs[k,:,img_size-patch_size:img_size,img_size-patch_size:img_size]*bkgrnds[k,img_size-patch_size:img_size,img_size-patch_size:img_size] for k in range(bkgrnds.shape[0])]
-        patches.append(np.stack(bkgrnds_list,axis=0) if len(bkgrnds_list)>0 else  None)
+            for j in range(num_bkgrnd_patches):
+                patch_list = []
+                for k in range(bkgrnds.shape[0]):
+                    if i != num_bkgrnd_patches-1 and j != num_bkgrnd_patches-1:
+                        patch = imgs[k, :, i*patch_size:(i+1)*patch_size, j*patch_size:(j+1)*patch_size] * bkgrnds[k, i*patch_size:(i+1)*patch_size, j*patch_size:(j+1)*patch_size]
+                    elif i == num_bkgrnd_patches-1 and j != num_bkgrnd_patches-1:
+                        patch = imgs[k, :, img_size-patch_size:img_size, j*patch_size:(j+1)*patch_size] * bkgrnds[k, img_size-patch_size:img_size, j*patch_size:(j+1)*patch_size]
+                    elif i != num_bkgrnd_patches-1 and j == num_bkgrnd_patches-1:
+                        patch = imgs[k, :, i*patch_size:(i+1)*patch_size, img_size-patch_size:img_size] * bkgrnds[k, i*patch_size:(i+1)*patch_size, img_size-patch_size:img_size]
+                    else:
+                        patch = imgs[k, :, img_size-patch_size:img_size, img_size-patch_size:img_size] * bkgrnds[k, img_size-patch_size:img_size, img_size-patch_size:img_size]
+                    patch_list.append(pad_patch(patch, patch_size))
+
+                bkgrnds_list.extend(patch_list)
+        patches.append(np.stack(bkgrnds_list, axis=0) if len(bkgrnds_list) > 0 else None)
     
     for cls_index in range(start_index,classes):
-        masks_=masks[:,cls_index,:,:] #getting the class masks
+        masks_=one_hot_masks[:,cls_index,:,:] #getting the class masks [:,:,:]
         cls_list=[]
         cls_coordinate=[]
         for im_index in range(masks_.shape[0]):
@@ -151,5 +192,23 @@ def _get_patches(imgs,masks,classes=21,background=True,img_size=512,patch_size=2
         else:
             patches.append(None)
     
+    print(f'## patches[3].shape: {patches[3].shape}')
+
+    def visualize_channel(data, channel_index=0):
+        if data.ndim != 4 or data.shape[1] < channel_index + 1:
+            raise ValueError("데이터는 (N, C, H, W) 형태이어야 하며, 주어진 채널 인덱스가 유효해야 합니다.")
+
+        # 데이터에서 선택한 채널 이미지를 가져옵니다.
+        # data.shape 예시: (1, 3, 192, 192), channel_index 예시: 0 (첫 번째 채널)
+        image = data[0, channel_index, :, :]  # 첫 번째 이미지의 특정 채널
+
+        # 이미지 시각화
+        plt.imshow(image, cmap='gray')
+        plt.colorbar()  # 색상 막대 표시
+        plt.title(f"Channel {channel_index}")
+        plt.show()
+
+    data=patches[3]
+    visualize_channel(data, channel_index=0)
     return patches
                     
